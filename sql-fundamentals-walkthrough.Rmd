@@ -1,0 +1,546 @@
+---
+title: "SQL Fundamentals Walkthrough"
+author: "Chira Levy"
+date: "2023-02-01"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Contents
+
+1.  Introduction
+2.  Essential Keywords
+    -   SELECT
+    -   DISTINCT
+    -   WHERE
+    -   ORDER BY
+    -   DESC
+    -   NULL Values and Logical Operators
+    -   BETWEEN
+    -   AS
+    -   LIKE and NOT LIKE
+    -   LIMIT and OFFSET
+    -   Disconnecting
+3.  Joins and Aggregations
+    -   Joining Multiple Tables
+    -   Outer Joins
+    -   Aggregations
+    -   Grouping
+    -   Set Operations
+    -   Order of Keywords
+
+---
+
+# 1. Introduction
+
+SQL (Structured Query Language) is a widely used programming language for storing, managing, and retrieving data in databases. It is especially valuable for analyzing large datasets that cannot be stored on a single machine, a.k.a. big data. One of the key advantages of using SQL for big data analysis is that it does not require data to be directly imported, which in turn keeps the processes of data analysis and data maintenance separate. This separation enhances the efficiency and quality of both processes, ensuring that the insights derived from big data are accurate and actionable.
+
+There are many dialects of SQL, including SQL Server, PostgreSQL, Oracle, MySQL, and SQLite. In this walkthrough of SQL fundamentals, we'll use SQLite to work with a database stored on our computer. Using SQLite will allow us to execute SQL queries within the RMarkdown environment and having the data local will simplify our connection to it. The database we'll use is from the company [data.world](https://data.world/).
+
+To follow along in RStudio, please download the [sql-fundamentals-walkthrough](https://github.com/chiralevy/sql-fundamentals-walkthrough) repository to your local computer and place the sqlite files in the same folder as this RMarkdown file.
+
+To begin, follow the code chunks below, using the accompanying markdown snippets for insight and guidance. If you see something that can be improved, please do reach out!
+
+```{r}
+library(DBI)# To connect to database management systems
+library(RSQLite) # To use SQLite in RMarkdown
+library(RMariaDB) # To use MySQL (if needed)
+library(dplyr) # Part of tidyverse, has commands for reading data
+```
+
+Now, let's set up a connection to the animals database using the dbConnect function. Note that we are not importing data. Instead, we create a connection or pathway that allows us to access it.
+
+```{r}
+db <- dbConnect(
+          SQLite(), # Dialect of SQL we will be using
+          dbname = "animals.sqlite" # Name of database and where to find it
+)
+db
+```
+
+Finally, before diving into the essential keywords of SQL, let's examine the tables in this database.
+
+```{r}
+dbListTables(db)
+```
+
+# 2. Essential Keywords
+
+### SELECT
+
+Most SQL queries start with the SELECT statement. As the name suggests, SELECT is used to retrieve data from tables in a database.
+
+Here, SELECT is used to retrieve the name and intake_type columns from the table, austin_animal_center_intakes:
+
+```{sql, connection = db}
+SELECT name, intake_type 
+FROM austin_animal_center_intakes
+```
+
+*Note: Keywords are case-insensitive, but convention is to capitalize them. It's also convention to use multiple lines for different parts of the query. This makes the queries more readable.*
+
+"\*" is a wildcard used to select all columns:
+
+```{sql, connection = db}
+SELECT * FROM austin_animal_center_intakes
+```
+
+To see how many animals, count animal_id:
+
+```{sql, connection = db}
+SELECT COUNT(animal_id)
+FROM austin_animal_center_intakes
+```
+
+### DISTINCT
+
+Suppose we want to collect together all the different types of animals. Add keyword DISTINCT to SELECT:
+
+```{sql, connection = db}
+SELECT DISTINCT animal_type 
+  FROM austin_animal_center_intakes
+```
+
+DISTINCT applies to all columns listed in SELECT:
+
+```{sql, connection = db}
+SELECT DISTINCT animal_type, 
+  sex_upon_intake, 
+  age_upon_intake
+  FROM austin_animal_center_intakes
+```
+
+*Note: The output of this query has 539 rows, meaning there are 539 combinations of these three values in the data set.*
+
+### WHERE
+
+In SQL, we use WHERE to filter data.
+
+To find all cats in the monthly intakes data set:
+
+```{sql, connection = db}
+SELECT year, month, count, animal_type
+  FROM austin_animal_center_intakes_by_month
+  WHERE animal_type == "Cat"
+```
+
+*Note: Logical operator is =, not ==*
+
+### ORDER BY
+
+In SQL, we use ORDER BY to sort data in ascending or descending order.
+
+To order by year with ties broken by month:
+
+```{sql, connection = db}
+SELECT year, month, count, animal_type
+  FROM austin_animal_center_intakes_by_month
+  WHERE animal_type == "Cat"
+  ORDER BY year, month
+```
+
+*Note: WHERE must come before ORDER BY.*
+
+### DESC
+
+To put more recent data first, use DESC. DESC goes after the variable name:
+
+```{sql, connection = db}
+SELECT year, month, count, animal_type
+  FROM austin_animal_center_intakes_by_month
+  WHERE animal_type == "Cat"
+  ORDER BY year DESC, month DESC
+```
+
+To order by count in descending order:
+
+```{sql, connection = db}
+SELECT year, month, count, animal_type
+  FROM austin_animal_center_intakes_by_month
+  WHERE animal_type == "Cat"
+  ORDER BY count DESC
+```
+
+### NULL Values and Logical Operators
+
+By default, ORDER BY puts NULL values at end; to put them first, add NULLS FIRST at the end of the line.
+
+ORDER BY [colname] NULLS FIRST
+
+Logical operators:
+
+-   & - AND
+-   \| - OR
+-   ! - NOT
+
+Cats and dogs where intake condition was not normal:
+
+```{sql, connection = db}
+SELECT animal_type, intake_type, 
+  Intake_condition, age_upon_intake
+  FROM austin_animal_center_intakes
+  WHERE (animal_type = "Cat" OR animal_type = "Dog") AND (NOT intake_condition = "Normal")
+```
+
+To check if data value is NULL, use IS NULL:
+
+```{sql, connection = db}
+SELECT * FROM austin_animal_center_intakes
+  WHERE animal_type IS NULL
+```
+
+### BETWEEN
+
+For numerical data, we can use BETWEEN:
+
+```{sql, connection = db}
+SELECT *
+FROM austin_animal_center_intakes_by_month
+WHERE count BETWEEN 900 and 2000
+```
+
+### Transforming Data with AS
+
+To rename variables, use AS keyword:
+
+```{sql, connection = db}
+SELECT name AS Name, intake_type AS 'Intake Type'
+  FROM austin_animal_center_intakes
+```
+
+To mutate, use AS within select:
+
+```{sql, connection = db}
+SELECT monthyear, 
+animal_type, 
+outcome_type, 
+(age_in_days/365) AS 'Years Old' 
+FROM austin_animal_center_age_at_outcome
+```
+
+### LIKE and NOT LIKE
+
+The LIKE and NOT LIKE operators are used in a WHERE clause to search for a specified pattern in a column. They are often used with wildcard characters to substitute for one or more characters in a pattern string:
+
+-   \% stands for any number of characters
+-   \_ matches a single character.
+
+Examples:
+
+-   "%test" would match "unfairtest", "fair test", or "test" but not "test case".
+-   "t_st" matches "test" or "tkst", but not "tests".
+
+Suppose we want to find all data where the breed includes "wolfhound":
+
+```{sql, connection = db}
+SELECT sex_upon_outcome,
+outcome_type,
+outcome_subtype,
+breed
+FROM austin_animal_center_outcomes
+WHERE animal_type = "Dog"
+AND breed LIKE "%wolfhound%"
+ORDER BY monthyear
+```
+
+### LIMIT and OFFSET
+
+You can select different parts of the data to look at.
+
+-   LIMIT = How many rows to display (can't be more than 1000)
+-   OFFSET = How many rows at beginning to skip.
+
+```{sql, connection = db}
+SELECT found_location, intake_type 
+FROM austin_animal_center_intakes
+LIMIT 100
+OFFSET 20000
+```
+
+### Disconnecting
+
+When done, it's good practice to disconnect from the database:
+
+```{r}
+dbDisconnect(db)
+```
+
+------------------------------------------------------------------------
+
+# 3. Joins and Aggregations
+
+In part 2 of this walkthrough, we'll be using the sales.sqlite database. Let's set up a connection to it:
+
+```{r}
+db_sales <- dbConnect(
+          SQLite(), # Dialect of SQL we will be using
+          dbname = "sales.sqlite" # Name of database and where to find it
+)
+db_sales
+```
+
+```{r}
+dbListTables(db_sales)
+```
+
+### Joining Multiple Tables
+
+**Method 1**: Use WHERE
+
+```{sql, connection = db_sales}
+SELECT sales_pipeline.sales_agent, 
+       sales_teams.manager, 
+       sales_pipeline.account
+  FROM sales_teams, sales_pipeline
+  WHERE (sales_pipeline.sales_agent = sales_teams.sales_agent)
+```
+
+What's going on here?
+
+-   In FROM, draw data from two tables: sales_teams and sales_pipeline
+-   In SELECT, include columns from sales_teams and sales_pipeline using tablename.columnname format
+-   In WHERE, indicate how the join works. Declare which of the variables from the two tables must be equal. (It's fine to set multiple columns equal.)
+
+This is an *inner join*. It only keeps agents that appear in both tables.
+
+In WHERE, in addition to defining the join, we can also specify filtering conditions:
+
+```{sql, connection = db_sales}
+SELECT sales_pipeline.sales_agent, 
+       sales_teams.manager, 
+       sales_pipeline.account
+  FROM sales_teams, sales_pipeline
+  WHERE (sales_pipeline.sales_agent = sales_teams.sales_agent) AND 
+      sales_pipeline.deal_stage = "Won" 
+```
+
+For extra readability, we can relabel variables/columns using AS. We can also rename whole tables:
+
+```{sql, connection = db_sales}
+SELECT pipeline.sales_agent, 
+       teams.manager, 
+       pipeline.account
+  FROM sales_teams AS teams, sales_pipeline AS pipeline
+  WHERE (pipeline.sales_agent = teams.sales_agent) AND 
+      pipeline.deal_stage = "Won"
+```
+
+*Note: Even when renaming tables in FROM, we can use those new names in SELECT.*
+
+**Method 2**: Use JOIN keyword
+
+When joining columns that have the same name in both tables, we can use USING:
+
+```{sql, connection = db_sales}
+SELECT pipeline.sales_agent AS Agent, 
+      Teams.manager, 
+      pipeline.account
+  FROM sales_teams AS teams
+    JOIN sales_pipeline AS pipeline USING (sales_agent)
+  WHERE pipeline.deal_stage = "Won" 
+```
+
+If the columns we're joining by have different names, use ON instead of USING:
+
+```{sql, connection = db_sales}
+SELECT pipeline.sales_agent AS Agent, 
+      Teams.manager, 
+      pipeline.account
+  FROM sales_teams AS teams
+    JOIN sales_pipeline AS pipeline 
+    ON pipeline.sales_agent = teams.sales_agent
+  WHERE pipeline.deal_stage = "Won" 
+```
+
+*Note: This is still an inner join. It only keep agents that appear in both tibbles.*
+
+### Outer Joins
+
+Right joins, left joins, and full joins are all examples of outer joins.
+
+-   LEFT OUTER JOIN
+-   RIGHT OUTER JOIN (not supported by SQLite)
+-   FULL OUTER JOIN (not supported by SQLite)
+
+Example of a Left Outer Join:
+
+```{sql, connection = db_sales}
+SELECT sales_teams.sales_agent AS Agent, 
+sales_pipeline.deal_stage
+FROM sales_teams 
+  LEFT OUTER JOIN sales_pipeline 
+  ON sales_teams.sales_agent = sales_pipeline.Sales_Agent
+  WHERE Agent = "Carol Thompson"
+```
+
+*Note: Carol Thompson has no deals in pipeline and, thus, does not appear in the sales_pipeline table. However, she is included when we do the left outer join as above because she's in sales_teams.*
+
+To do a right join:
+
+-   If you're using a more robust dialect of SQL, use RIGHT OUTER JOIN.
+-   In SQLite, just switch order of tables.
+
+```{sql, connection = db_sales}
+SELECT sales_teams.sales_agent AS Agent, 
+sales_pipeline.deal_stage
+FROM sales_pipeline
+  LEFT OUTER JOIN sales_teams
+  ON sales_teams.sales_agent = sales_pipeline.Sales_Agent
+  WHERE Agent = "Carol Thompson"
+```
+
+To do a full join:
+
+-   In a more robust dialect of SQL, use FULL OUTER JOIN.
+-   In SQLite, do the union of a left join and a right join.
+
+### Aggregations
+
+-   SUM
+-   COUNT
+-   AVG
+-   MIN
+-   MAX
+-   CONCAT (concatenation)
+
+These go within the SELECT:
+
+```{sql, connection = db_sales}
+SELECT SUM(Revenue) AS "Total Revenue"
+  FROM accounts 
+```
+
+To count the number of rows, use COUNT(\*):
+
+```{sql, connection = db_sales}
+SELECT COUNT(*) AS "Number of Deals Won"
+  FROM sales_pipeline
+  WHERE deal_stage = "Won"
+```
+
+*Note: Counting of rows happens after WHERE.*
+
+Find average closing value of each deal:
+
+```{sql, connection = db_sales}
+SELECT COUNT(*) AS "Deals Won", 
+    AVG(close_value) AS "Average Closing Value"
+  FROM sales_pipeline
+  WHERE deal_stage = "Won"
+```
+
+### Grouping
+
+```{sql, connection = db_sales}
+SELECT sales_agent AS "Agent", 
+    COUNT(*) AS "Deals Won", 
+    AVG(close_value) AS "Average Closing Value"
+  FROM sales_pipeline
+  WHERE deal_stage = "Won"
+  GROUP BY sales_agent
+```
+
+Works with joins:
+
+```{sql, connection = db_sales}
+SELECT sales_teams.manager, 
+    COUNT(*) AS "Number Deals Won", 
+    AVG(sales_pipeline.close_value) AS "Average Closing Value" 
+  FROM sales_teams 
+    JOIN sales_pipeline ON (sales_teams.sales_agent = sales_pipeline.sales_agent)
+  WHERE sales_pipeline.deal_stage = "Won"
+  GROUP BY sales_teams.manager
+```
+
+To filter observations before an aggregation occurs (or, within an aggregation), use FILTER(WHERE(...)) within the SELECT.
+
+To only count deals with a closing value over 1000:
+
+```{sql, connection = db_sales}
+SELECT sales_agent, 
+   COUNT(close_value) AS total, 
+   COUNT(close_value) FILTER(WHERE(close_value > 1000)) AS 'over 1000'
+  FROM sales_pipeline
+  WHERE deal_stage = "Won" 
+  GROUP BY sales_agent
+```
+
+To filter observations after an aggregation occurs, use HAVING. Let's find sales agents with large deals:
+
+```{sql, connection = db_sales}
+SELECT sales_agent, 
+   COUNT(close_value) AS total 
+  FROM sales_pipeline
+  WHERE deal_stage = "Won" 
+  GROUP BY sales_agent
+  HAVING COUNT(close_value) > 200
+```
+
+### Set Operations
+
+-   UNION
+-   INTERSECT
+-   MINUS/EXCEPT
+
+To find all accounts, including international:
+
+```{sql, connection = db_sales}
+SELECT intl_accounts.account, 
+  intl_accounts.office_location AS location
+  FROM intl_accounts
+```
+
+```{sql, connection = db_sales}
+SELECT accounts.account, 
+    "USA" AS Location
+  FROM accounts
+```
+
+To do the union:
+
+```{sql, connection = db_sales}
+SELECT intl_accounts.account, 
+  intl_accounts.office_location AS location
+  FROM intl_accounts
+    UNION
+SELECT accounts.account, 
+    "USA" AS Location
+  FROM accounts  
+  
+```
+
+*Note: To do a full join, do a left join, do a right join (by swapping the order of the tables in your join), and then take their union.*
+
+To find agents in sale_teams but not in sales_pipeline:
+
+```{sql, connection = db_sales}
+SELECT sales_agent
+  FROM sales_teams
+    EXCEPT
+SELECT sales_agent
+  FROM sales_pipeline
+```
+
+*Note: This is like a set difference.*
+
+### Order of Keywords
+
+Keywords must appear in the following order (not all have to appear):
+
+1.  SELECT
+2.  FROM
+3.  WHERE
+4.  GROUP BY
+5.  HAVING
+6.  ORDER BY
+
+```{r}
+dbDisconnect(db_sales)
+```
